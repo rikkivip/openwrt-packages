@@ -43,22 +43,10 @@ local encrypt_methods_ssr = {
 	"aes-128-ctr",
 	"aes-192-ctr",
 	"aes-256-ctr",
-	"aes-128-ofb",
-	"aes-192-ofb",
-	"aes-256-ofb",
-	"des-cfb",
-	"bf-cfb",
-	"cast5-cfb",
 	"rc4-md5",
-	"chacha20",
 	"chacha20-ietf",
-	"salsa20",
-	"camellia-128-cfb",
-	"camellia-192-cfb",
-	"camellia-256-cfb",
-	"idea-cfb",
-	"rc2-cfb",
-	"seed-cfb",
+	"xchacha20",
+
 }
 
 
@@ -68,6 +56,8 @@ local protocol_ssr = {
 	"auth_sha1_v4",
 	"auth_aes128_md5",
 	"auth_aes128_sha1",
+	"auth_chain_a",
+	"auth_chain_b",
 }
 
 
@@ -77,6 +67,8 @@ local obfs_ssr_list = {
 	"http_simple",
 	"http_post",
 	"tls1.2_ticket_auth",
+	"tls1.2_ticket_fastauth",
+	"random_head",
 }
 
 m = Map(clash, translate("Edit Server"))
@@ -201,6 +193,7 @@ o = s:option(ListValue, "udp", translate("udp"))
 o:value("true")
 o:value("false")
 o:depends("type", "ss")
+o:depends("type", "ssr")
 o:depends("type", "vmess")
 o:depends("type", "socks5")
 o:depends("type", "trojan")
@@ -298,6 +291,12 @@ o:depends("obfs_vmess", "http")
 o:depends("type", "socks5")
 o:depends("type", "http")
 
+o = s:option(Value, "servername", translate("SNI"))
+o.rmempty = true
+o.datatype = "host"
+o.placeholder = translate("example.com")
+o:depends("obfs_vmess", "websocket")
+
 -- [[ sni ]]--
 o = s:option(Value, "sni", translate("sni"))
 o.datatype = "host"
@@ -306,11 +305,12 @@ o.rmempty = true
 o:depends("type", "trojan")
 
 -- [[ alpn ]]--
-o = s:option(DynamicList, "alpn", translate("alpn"))
-o.default = "http/1.1"
-o:value("h2")
-o:value("http/1.1")
+o = s:option(Flag, "alpn_h2", translate("alpn-h2"))
 o:depends("type", "trojan")
+
+o = s:option(Flag, "alpn_http", translate("alpn-http/1.1"))
+o:depends("type", "trojan")
+
 
 local apply = luci.http.formvalue("cbi.apply")
 if apply then

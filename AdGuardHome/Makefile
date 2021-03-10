@@ -1,78 +1,86 @@
 #
 # Copyright (C) 2015-2016 OpenWrt.org
-#
-# This is free software, licensed under the GNU General Public License v3.
+# This is free software, licensed under the GNU General Public License v2.
+# See /LICENSE.txt for more information.
 #
 
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=AdGuardHome
-PROJECT_NAME:=AdGuardHome
-PKG_VERSION:=v0.102
-PKG_RELEASE:=0
+PKG_VERSION:=0.104.3
+PKG_RELEASE:=1
 
+PKG_SOURCE_PROTO:=git
+PKG_SOURCE_VERSION:=v$(PKG_VERSION)
+PKG_SOURCE_URL:=https://github.com/AdguardTeam/AdGuardHome
+PKG_MIRROR_HASH:=ec0d48413778267f4ac81091e58a88e5b5ee2f3c1ab48256ded3438bf171d311
 
-ifeq ($(ARCH),x86_64)
-	PKG_ARCH_AdGuardHome:=linux_amd64
-	ADG_CONF_NAME:=big_space
-endif
-ifeq ($(ARCH),i386)
-	PKG_ARCH_AdGuardHome:=linux_386
-	ADG_CONF_NAME:=big_space
-endif
-ifeq ($(ARCH),mipsel)
-	PKG_ARCH_AdGuardHome:=linux_mipsle
-	ADG_CONF_NAME:=small_flash
-endif
-ifeq ($(ARCH),mips)
-	PKG_ARCH_AdGuardHome:=linux_mips
-	ADG_CONF_NAME:=small_flash
-endif
-ifeq ($(ARCH),arm)
-ifeq ($(word 2,$(subst +,$(space),$(call qstrip,$(CONFIG_CPU_TYPE)))),)
-	PKG_ARCH_AdGuardHome:=linux_armv5
-else
-	PKG_ARCH_AdGuardHome:=linux_arm
-endif
-	ADG_CONF_NAME:=big_space
-endif
-ifeq ($(ARCH),aarch64)
-	PKG_ARCH_AdGuardHome:=linux_arm64
-	ADG_CONF_NAME:=big_space
-endif
+PKG_LICENSE:=GPL-3.0-only
+PKG_LICENSE_FILES:=LICENSE.txt
+PKG_MAINTAINER:=Dobroslaw Kijowski <dobo90@gmail.com>
 
-PKG_SOURCE:=AdGuardHome_$(PKG_ARCH_AdGuardHome).tar.gz
-PKG_SOURCE_URL:=https://github.com/AdguardTeam/AdGuardHome/releases/download/$(PKG_VERSION).$(PKG_RELEASE)/
-PKG_BUILD_DIR:=$(BUILD_DIR)/$(PKG_NAME)-$(PKG_VERSION)-$(PKG_RELEASE)
-PKG_HASH:=skip
+PKG_BUILD_DEPENDS:=golang/host node/host
+PKG_BUILD_PARALLEL:=1
+PKG_USE_MIPS16:=0
+
+PKG_CONFIG_DEPENDS:= \
+	CONFIG_ADGUARDHOME_COMPRESS_GOPROXY \
+	CONFIG_ADGUARDHOME_COMPRESS_UPX
+
+GO_PKG:=github.com/AdguardTeam/AdGuardHome
+GO_PKG_EXCLUDES:=dhcpd/standalone
+GO_PKG_LDFLAGS:=-s -w
+GO_PKG_LDFLAGS_X:=main.version=$(PKG_VERSION) main.channel=release
 
 include $(INCLUDE_DIR)/package.mk
+include $(TOPDIR)/feeds/packages/lang/golang/golang-package.mk
 
-define Package/$(PKG_NAME)
-	SECTION:=net
-	CATEGORY:=Network
-	TITLE:=Network-wide ads & trackers blocking DNS server
-	URL:=https://github.com/AdguardTeam/AdGuardHome
-	DEPENDS:=@(aarch64||arm||i386||mips||mipsel||x86_64)
+define Package/AdGuardHome
+  SECTION:=net
+  CATEGORY:=Network
+  TITLE:=Network-wide ads and trackers blocking DNS server
+  URL:=https://github.com/AdguardTeam/AdGuardHome
+  DEPENDS:=$(GO_ARCH_DEPENDS) +ca-bundle
 endef
 
-define Build/Prepare
-	mkdir -vp $(PKG_BUILD_DIR)
-	tar -zxvf $(DL_DIR)/$(PKG_SOURCE) -C $(PKG_BUILD_DIR)
+define Package/AdGuardHome/description
+Free and open source, powerful network-wide ads and trackers blocking DNS server.
 endef
 
-define Build/Configure
+define Package/$(PKG_NAME)/config
+config ADGUARDHOME_COMPRESS_GOPROXY
+	bool "Compiling with GOPROXY proxy"
+	default n
+
+config ADGUARDHOME_COMPRESS_UPX
+	bool "Compress executable files with UPX"
+	default n
 endef
+
+ifeq ($(CONFIG_ADGUARDHOME_COMPRESS_GOPROXY),y)
+export GO111MODULE=on
+export GOPROXY=https://goproxy.io
+endif
 
 define Build/Compile
-	chmod 0755 $(PKG_BUILD_DIR)/AdGuardHome/AdGuardHome
+( \
+  cd $(PKG_BUILD_DIR) ; \
+  npm --prefix client ci ; \
+  npm --prefix client run build-prod ; \
+  GOOS=$$$$(go env GOOS) GOARCH=$$$$(go env GOARCH) GO111MODULE=off go get -v github.com/gobuffalo/packr/... ; \
+  "$$$$(go env GOPATH)/bin/packr" -v -z -i $(PKG_BUILD_DIR)/home ; \
+  $(call GoPackage/Build/Compile) ; \
+)
+ifeq ($(CONFIG_ADGUARDHOME_COMPRESS_UPX),y)
+	$(STAGING_DIR_HOST)/bin/upx --lzma --best $(GO_PKG_BUILD_BIN_DIR)/AdGuardHome
+endif
 endef
 
-define Package/$(PKG_NAME)/install
+define Package/AdGuardHome/install
+	$(call GoPackage/Package/Install/Bin,$(PKG_INSTALL_DIR))
 	$(INSTALL_DIR) $(1)/usr/bin/AdGuardHome
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/AdGuardHome/AdGuardHome $(1)/usr/bin/AdGuardHome/$(PKG_NAME)
-	$(INSTALL_DIR) $(1)/etc/AdGuardHome
-	$(INSTALL_CONF) ./conf/$(ADG_CONF_NAME).yaml $(1)/etc/AdGuardHome/AdGuardHome.yaml
+	$(INSTALL_BIN) $(GO_PKG_BUILD_BIN_DIR)/AdGuardHome $(1)/usr/bin/AdGuardHome/AdGuardHome
 endef
 
-$(eval $(call BuildPackage,$(PKG_NAME)))
+$(eval $(call GoBinPackage,AdGuardHome))
+$(eval $(call BuildPackage,AdGuardHome))
